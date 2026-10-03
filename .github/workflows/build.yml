@@ -29,6 +29,11 @@ on:
         required: false
         default: false
 
+      BRANCH_OVERRIDE:
+        type: string
+        required: false
+        default: ""
+
 
   workflow_dispatch:
     inputs:
@@ -92,7 +97,7 @@ jobs:
     env:
       TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
 
     steps:
       - name: Checkout code
