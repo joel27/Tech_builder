@@ -1,0 +1,190 @@
+name: Build + Upload (xaga)
+
+# Compila con el builder (build.yml + config.sh) y, en vez de crear un
+# release, sube el zip AnyKernel3 al MISMO repo, en la rama "builds".
+# No necesita ningun secret: usa el token automatico de Actions.
+
+permissions:
+  contents: write
+  actions: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      BRANCH_OVERRIDE:
+        description: "Rama del kernel (joel27/android_kernel_xiaomi_mt6895)"
+        type: string
+        default: "16.2-rebase"
+
+      ALL_VARIANTS:
+        description: "Compilar TODAS las variantes de .github/matrix/device.json (ignora KSU/SUSFS/LXC)"
+        type: boolean
+        default: false
+
+      KSU:
+        description: "Incluir KernelSU?"
+        type: boolean
+        default: false
+
+      SUSFS:
+        description: "Incluir SUSFS? (requiere KSU)"
+        type: boolean
+        default: false
+
+      LXC:
+        description: "Aplicar parche LXC?"
+        type: boolean
+        default: false
+
+      TG_NOTIFY:
+        description: "Avisar por Telegram? (requiere secrets TG_BOT_TOKEN y TG_CHAT_ID)"
+        type: boolean
+        default: false
+
+env:
+  # Repo destino. Si pones otro repo, el secret GH_TOKEN debe ser un PAT con
+  # permiso de escritura en ese repo.
+  UPLOAD_REPO: ${{ github.repository }}
+  # Rama y carpeta donde quedan los zips.
+  UPLOAD_BRANCH: builds
+  UPLOAD_DIR: xaga
+  # Cuantas compilaciones (carpetas) se conservan; las mas viejas se borran.
+  KEEP_RUNS: "5"
+
+jobs:
+  prepare:
+    name: Prepare matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.json }}
+
+    steps:
+      - name: Checkout current repo
+        uses: actions/checkout@v6.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Build matrix
+        id: matrix
+        env:
+          ALL: ${{ inputs.ALL_VARIANTS }}
+          KSU: ${{ inputs.KSU }}
+          SUSFS: ${{ inputs.SUSFS }}
+          LXC: ${{ inputs.LXC }}
+        run: |
+          if [[ "$ALL" == "true" ]]; then
+            json="$(jq -c . .github/matrix/device.json)"
+          else
+            json="$(
+              jq -nc \
+                --argjson ksu "$KSU" \
+                --argjson susfs "$SUSFS" \
+                --argjson lxc "$LXC" \
+                '{variant: [{name: "custom", KSU: $ksu, SUSFS: $susfs, LXC: $lxc}]}'
+            )"
+          fi
+          echo "$json"
+          echo "json=$json" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.variant.name }} variant
+    needs: prepare
+    strategy:
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    uses: ./.github/workflows/build.yml
+    secrets: inherit
+    with:
+      BUILD_TARGET: device
+      BRANCH_OVERRIDE: ${{ inputs.BRANCH_OVERRIDE }}
+      KSU: ${{ matrix.variant.KSU }}
+      SUSFS: ${{ matrix.variant.SUSFS }}
+      LXC: ${{ matrix.variant.LXC }}
+      STOCK_CONFIG: auto
+      TG_NOTIFY: ${{ inputs.TG_NOTIFY }}
+      IS_RELEASE: false
+
+  upload:
+    name: Upload zips to repo
+    needs: build
+    runs-on: ubuntu-latest
+    # Evita que dos subidas se pisen al mismo tiempo.
+    concurrency:
+      group: upload-builds
+      cancel-in-progress: false
+
+    steps:
+      - name: Download AnyKernel3 zips
+        uses: actions/download-artifact@v7
+        with:
+          pattern: "*-AnyKernel3"
+          merge-multiple: true
+          path: zips
+
+      - name: Check zips
+        run: |
+          shopt -s nullglob
+          zips=(zips/*.zip)
+          if ((${#zips[@]} == 0)); then
+            echo "::error::No AnyKernel3 zips were downloaded"
+            exit 1
+          fi
+          ls -lh zips
+
+          # GitHub rechaza archivos de mas de 100 MB en un push normal.
+          big="$(find zips -name '*.zip' -size +95M)"
+          if [[ -n $big ]]; then
+            echo "::error::Zip too large for a normal git push (>95 MB): $big"
+            exit 1
+          fi
+
+      - name: Push zips to the builds branch
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${UPLOAD_REPO}.git"
+          run_dir="${UPLOAD_DIR}/$(date -u +%Y-%m-%d_%H-%M)_run${GITHUB_RUN_NUMBER}"
+
+          mkdir publish
+          cd publish
+          git init -q
+          git remote add origin "$remote"
+
+          # Parte de lo que ya hay en la rama (si existe).
+          if git ls-remote --exit-code --heads origin "$UPLOAD_BRANCH" > /dev/null 2>&1; then
+            git fetch -q --depth=1 origin "$UPLOAD_BRANCH"
+            git checkout -q FETCH_HEAD
+          fi
+
+          # Cada subida es un commit raiz nuevo: el historial no crece y los
+          # zips viejos dejan de ocupar espacio en el repo.
+          git checkout -q --orphan publish
+
+          mkdir -p "$run_dir"
+          cp -f ../zips/*.zip "$run_dir/"
+
+          # Conserva solo las ultimas KEEP_RUNS carpetas (el nombre empieza con la fecha).
+          find "$UPLOAD_DIR" -mindepth 1 -maxdepth 1 -type d |
+            sort -r |
+            tail -n +"$((KEEP_RUNS + 1))" |
+            xargs -r rm -rf --
+
+          git add -A
+          git commit -q -m "chore(builds): add run #${GITHUB_RUN_NUMBER}" \
+            -m "$(cd ../zips && printf '%s\n' *.zip)"
+          git push -q --force origin "publish:${UPLOAD_BRANCH}"
+
+          {
+            echo "### Builds subidos"
+            echo
+            for zip in ../zips/*.zip; do
+              name="$(basename "$zip")"
+              echo "- [${name}](https://github.com/${UPLOAD_REPO}/raw/${UPLOAD_BRANCH}/${run_dir}/${name})"
+            done
+            echo
+            echo "Carpeta: https://github.com/${UPLOAD_REPO}/tree/${UPLOAD_BRANCH}/${run_dir}"
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
