@@ -11,7 +11,7 @@
 DEVICE_NAME="xaga"
 KERNEL_NAME="Tech"
 KBUILD_BUILD_HOST="Tech"
-DEVICE_KERNEL_REPO="github.com:joel27/android_kernel_xiaomi_mt6895@${BRANCH_OVERRIDE:-16.2-rebase}"
+DEVICE_KERNEL_REPO="github.com:joel27/android_kernel_xiaomi_mt6895@${BRANCH_OVERRIDE:-main}"
 DEVICE_AK3_REPO="github.com:joel27/AnyKernel3@xaga"
 DEVICE_RELEASE_REPO="joel27/Tech_builder"
 DEVICE_DEFCONFIG_OVERLAY="vendor/xaga.config"
