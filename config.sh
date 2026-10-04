@@ -2,18 +2,18 @@
 # shellcheck disable=SC2034
 
 #
-# ESK Kernel builder configuration
+# Tech Kernel builder configuration
 #
 
 ################################################################################
 # Branch-specific device configuration
 ################################################################################
 DEVICE_NAME="xaga"
-KERNEL_NAME="ESK"
-KBUILD_BUILD_HOST="esk"
-DEVICE_KERNEL_REPO="github.com:ESK-Project/android_kernel_xiaomi_mt6895@${BRANCH_OVERRIDE:-main}"
-DEVICE_AK3_REPO="github.com:ESK-Project/AnyKernel3@xaga"
-DEVICE_RELEASE_REPO="ESK-Project/esk-releases"
+KERNEL_NAME="Tech"
+KBUILD_BUILD_HOST="Tech"
+DEVICE_KERNEL_REPO="github.com:joel27/android_kernel_xiaomi_mt6895@${BRANCH_OVERRIDE:-16.2-rebase}"
+DEVICE_AK3_REPO="github.com:joel27/AnyKernel3@xaga"
+DEVICE_RELEASE_REPO="joel27/Tech_builder"
 DEVICE_DEFCONFIG_OVERLAY="vendor/xaga.config"
 DEVICE_LXC_SUPPORTED="true"
 
@@ -77,9 +77,9 @@ case "$BUILD_TARGET" in
         ;;
     generic)
         TARGET_NAME="generic"
-        KERNEL_REPO="github.com:ESK-Project/android12-5.10-gki@${BRANCH_OVERRIDE:-main}"
-        AK3_REPO="github.com:ESK-Project/AnyKernel3@generic"
-        RELEASE_REPO="ESK-Project/gki-releases"
+        KERNEL_REPO="github.com:joel27/android12-5.10-gki@${BRANCH_OVERRIDE:-main}"
+        AK3_REPO="github.com: joel27/AnyKernel3@generic"
+        RELEASE_REPO="joel27/Tech_builder"
         STOCK_CONFIG_DEFAULT="true"
         ;;
     *)
