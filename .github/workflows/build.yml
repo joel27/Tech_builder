@@ -51,7 +51,7 @@ on:
 
       KSU:
         description: "Include KernelSU?"
-        default: false
+        default: true
         type: boolean
 
       SUSFS:
@@ -75,7 +75,7 @@ on:
 
       TG_NOTIFY:
         description: "Telegram Notify"
-        default: true
+        default: false
         type: boolean
 
       IS_RELEASE:
